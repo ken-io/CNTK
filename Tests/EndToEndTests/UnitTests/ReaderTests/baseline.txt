@@ -1747,6 +1747,9 @@ Test module "ReaderTests" has passed with:
     Test case "ReaderLibTests/DefaultCorpusDescriptor" has passed with:
       2 assertions out of 2 passed
 
+    Test case "ReaderLibTests/CorpusDescriptorHashing" has passed with:
+      2 assertions out of 2 passed
+
     Test case "ReaderLibTests/NumericCorpusDescriptor" has passed with:
       11 assertions out of 11 passed
 
@@ -1810,3 +1813,42 @@ Test module "ReaderTests" has passed with:
 
     Test case "PackerTests/TestTruncatedBpttPacker" has passed with:
       1 assertion out of 1 passed
+
+  Test suite "TextInputIndexBuilderTests" has passed with:
+    12 test cases out of 12 passed
+    4196443 assertions out of 4196443 passed
+
+    Test case "TextInputIndexBuilderTests/Index_exceptions" has passed with:
+      8 assertions out of 8 passed
+
+    Test case "TextInputIndexBuilderTests/Index_single_line_input" has passed with:
+      464 assertions out of 464 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_different_buffer_sizes" has passed with:
+      171 assertions out of 171 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_different_chunk_sizes" has passed with:
+      279 assertions out of 279 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_non_empty_main_stream_1" has passed with:
+      534 assertions out of 534 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_non_empty_main_stream_2" has passed with:
+      136 assertions out of 136 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_non_numeric_sequence_ids" has passed with:
+      55 assertions out of 55 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_multi_line_sequences" has passed with:
+      139 assertions out of 139 passed
+
+    Test case "TextInputIndexBuilderTests/Index_non_primary" has passed with:
+      28 assertions out of 28 passed
+
+    Test case "TextInputIndexBuilderTests/Index_with_caching" has passed with:
+      20 assertions out of 20 passed
+
+    Test case "TextInputIndexBuilderTests/Index_64MB_with_caching_check_perf" has passed with:
+      4194609 assertions out of 4194609 passed
+
+    Test case "TextInputIndexBuilderTests/Index_1GB_with_caching_check_perf" has passed
