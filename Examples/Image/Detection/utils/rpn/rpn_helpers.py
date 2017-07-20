@@ -12,7 +12,6 @@ from cntk.initializer import glorot_uniform, normal
 from cntk.layers import Convolution
 from cntk.losses import cross_entropy_with_softmax
 from utils.rpn.anchor_target_layer import AnchorTargetLayer
-from utils.rpn.cntk_ignore_label import IgnoreLabel
 from utils.rpn.proposal_layer import ProposalLayer
 from utils.rpn.proposal_target_layer import ProposalTargetLayer
 from utils.rpn.cntk_smoothL1_loss import SmoothL1Loss
