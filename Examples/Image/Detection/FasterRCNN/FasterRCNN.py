@@ -41,6 +41,7 @@ sys.path.append(os.path.join(abs_path, ".."))
 from utils.rpn.rpn_helpers import create_rpn, create_proposal_target_layer
 from utils.rpn.cntk_smoothL1_loss import SmoothL1Loss
 from utils.map.map_helpers import evaluate_detections
+from utils.annotations.annotations_helper import parse_class_map_file
 from config import cfg
 from od_mb_source import ObjectDetectionMinibatchSource
 from cntk_helpers import regress_rois
@@ -64,9 +65,8 @@ globalvars = {}
 globalvars['output_path'] = os.path.join(abs_path, "Output")
 
 # dataset specific parameters
-classes = cfg["CNTK"].CLASSES
-num_classes = len(classes)
 map_file_path = os.path.join(abs_path, cfg["CNTK"].MAP_FILE_PATH)
+globalvars['class_map_file'] = cfg["CNTK"].CLASS_MAP_FILE
 globalvars['train_map_file'] = cfg["CNTK"].TRAIN_MAP_FILE
 globalvars['test_map_file'] = cfg["CNTK"].TEST_MAP_FILE
 globalvars['train_roi_file'] = cfg["CNTK"].TRAIN_ROI_FILE
@@ -172,6 +172,7 @@ def parse_arguments():
     if not os.path.isdir(data_path):
         raise RuntimeError("Directory %s does not exist" % data_path)
 
+    globalvars['class_map_file'] = os.path.join(data_path, globalvars['class_map_file'])
     globalvars['train_map_file'] = os.path.join(data_path, globalvars['train_map_file'])
     globalvars['test_map_file'] = os.path.join(data_path, globalvars['test_map_file'])
     globalvars['train_roi_file'] = os.path.join(data_path, globalvars['train_roi_file'])
@@ -226,13 +227,13 @@ def create_fast_rcnn_predictor(conv_out, rois, fc_layers):
     fc_out = fc_layers(roi_out)
 
     # prediction head
-    W_pred = parameter(shape=(4096, num_classes), init=normal(scale=0.01), name="cls_score.W")
-    b_pred = parameter(shape=num_classes, init=0, name="cls_score.b")
+    W_pred = parameter(shape=(4096, globalvars['num_classes']), init=normal(scale=0.01), name="cls_score.W")
+    b_pred = parameter(shape=globalvars['num_classes'], init=0, name="cls_score.b")
     cls_score = plus(times(fc_out, W_pred), b_pred, name='cls_score')
 
     # regression head
-    W_regr = parameter(shape=(4096, num_classes*4), init=normal(scale=0.001), name="bbox_regr.W")
-    b_regr = parameter(shape=num_classes*4, init=0, name="bbox_regr.b")
+    W_regr = parameter(shape=(4096, globalvars['num_classes']*4), init=normal(scale=0.001), name="bbox_regr.W")
+    b_regr = parameter(shape=globalvars['num_classes']*4, init=0, name="bbox_regr.b")
     bbox_pred = plus(times(fc_out, W_regr), b_regr, name='bbox_regr')
 
     return cls_score, bbox_pred
@@ -252,7 +253,7 @@ def create_faster_rcnn_predictor(features, scaled_gt_boxes, dims_input):
     rpn_rois, rpn_losses = \
         create_rpn(conv_out, scaled_gt_boxes, dims_input, proposal_layer_param_string=cfg["CNTK"].PROPOSAL_LAYER_PARAMS)
     rois, label_targets, bbox_targets, bbox_inside_weights = \
-        create_proposal_target_layer(rpn_rois, scaled_gt_boxes, num_classes=num_classes)
+        create_proposal_target_layer(rpn_rois, scaled_gt_boxes, num_classes=globalvars['num_classes'])
 
     # Fast RCNN and losses
     cls_score, bbox_pred = create_fast_rcnn_predictor(conv_out, rois, fc_layers)
@@ -543,7 +544,7 @@ def train_faster_rcnn_alternating(debug_output=False):
 
         # use buffered proposals in target layer
         rois, label_targets, bbox_targets, bbox_inside_weights = \
-            create_proposal_target_layer(rpn_rois_buf, scaled_gt_boxes, num_classes=num_classes)
+            create_proposal_target_layer(rpn_rois_buf, scaled_gt_boxes, num_classes=globalvars['num_classes'])
 
         # Fast RCNN and losses
         fc_layers = clone_model(base_model, [pool_node_name], [last_hidden_node_name], CloneMethod.clone)
@@ -614,7 +615,7 @@ def train_faster_rcnn_alternating(debug_output=False):
 
     return create_eval_model(stage2_frcn_network, image_input, dims_input, rpn_model=stage2_rpn_network)
 
-def eval_faster_rcnn_mAP(eval_model, img_map_file, roi_map_file):
+def eval_faster_rcnn_mAP(eval_model, img_map_file, roi_map_file, classes):
     image_input = input_variable((num_channels, image_height, image_width), dynamic_axes=[Axis.default_batch_axis()], name=feature_node_name)
     roi_input = input_variable((cfg["CNTK"].INPUT_ROIS_PER_IMAGE, 5), dynamic_axes=[Axis.default_batch_axis()])
     dims_input = input_variable((6), dynamic_axes=[Axis.default_batch_axis()])
@@ -638,7 +639,7 @@ def eval_faster_rcnn_mAP(eval_model, img_map_file, roi_map_file):
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in
     #    (x1, y1, x2, y2, score)
-    all_boxes = [[[] for _ in range(num_test_images)] for _ in range(num_classes)]
+    all_boxes = [[[] for _ in range(num_test_images)] for _ in range(globalvars['num_classes'])]
 
     # evaluate test images and write netwrok output to file
     print("Evaluating Faster R-CNN model for %s images." % num_test_images)
@@ -672,7 +673,7 @@ def eval_faster_rcnn_mAP(eval_model, img_map_file, roi_map_file):
         coords_score_label = np.hstack((regressed_rois, scores, labels))
 
         #   shape of all_boxes: e.g. 21 classes x 4952 images x 58 rois x 5 coords+score
-        for cls_j in range(1, num_classes):
+        for cls_j in range(1, globalvars['num_classes']):
             coords_score_label_for_cls = coords_score_label[np.where(coords_score_label[:,-1] == cls_j)]
             all_boxes[cls_j][img_i] = coords_score_label_for_cls[:,:-1].astype(np.float32, copy=False)
 
@@ -710,6 +711,8 @@ if __name__ == '__main__':
     np.random.seed(seed=globalvars['rnd_seed'])
     model_path = os.path.join(globalvars['output_path'], "faster_rcnn_eval_{}_{}.model"
                               .format(cfg["CNTK"].BASE_MODEL, "e2e" if globalvars['train_e2e'] else "4stage"))
+    classes = parse_class_map_file(globalvars['class_map_file'])
+    globalvars['num_classes'] = len(classes)
 
     # Train only if no model exists yet
     if os.path.exists(model_path) and cfg["CNTK"].MAKE_MODE:
@@ -729,7 +732,7 @@ if __name__ == '__main__':
         print("Stored eval model at %s" % model_path)
 
     # Compute mean average precision on test set
-    eval_faster_rcnn_mAP(eval_model, globalvars['test_map_file'], globalvars['test_roi_file'])
+    eval_faster_rcnn_mAP(eval_model, globalvars['test_map_file'], globalvars['test_roi_file'], classes)
 
     # Plot results on test set
     if cfg["CNTK"].VISUALIZE_RESULTS:
