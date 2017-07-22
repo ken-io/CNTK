@@ -11,6 +11,7 @@
 #include "ComputationNode.h"
 #include "Sequences.h"
 
+#include <iostream>
 #include <unordered_set>
 #include <map>
 #include <string>
@@ -22,9 +23,6 @@
 #include <assert.h>
 #include <stack>
 #include <unordered_map>
-#include <numeric>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/range/adaptor/transformed.hpp>
 
 namespace Microsoft { namespace MSR { namespace CNTK {
 
@@ -51,16 +49,7 @@ template <class ElemType>
 /*virtual*/ void ReduceElementsNode<ElemType>::Load(File& fstream, size_t modelVersion) /*override*/
 {
     Base::Load(fstream, modelVersion);
-    int num_axes = 1; //emulate old version in which only 1 axis is supported
-    if (modelVersion >= CNTK_MODEL_VERSION_27)
-        fstream >> num_axes;
-    for (int i = 0; i < num_axes; ++i)
-    {
-        int axis; 
-        fstream >> axis;
-        m_axes.push_back(axis);
-    }
-    fstream >> m_operation;
+    fstream >> m_axes >> m_operation;
     if (modelVersion >= CNTK_MODEL_VERSION_24)
         fstream >> m_keepDimensions;
     else
@@ -73,12 +62,7 @@ template <class ElemType>
 /*virtual*/ void ReduceElementsNode<ElemType>::Save(File& fstream) const /*override*/
 {
     Base::Save(fstream);
-    fstream << ((int) m_axes.size());
-    for (int i = 0; i < m_axes.size(); ++i)
-    {
-        fstream << m_axes[i];
-    }
-    fstream << m_operation; // note: we serialize the string and not the opcode, since opcodes may change
+    fstream << m_axes << m_operation; // note: we serialize the string and not the opcode, since opcodes may change
     fstream << m_keepDimensions;
 }
 
@@ -133,6 +117,8 @@ template <class ElemType>
     {
     case ElementWiseOperator::opArgmin:
     case ElementWiseOperator::opArgmax:
+        //TODO: Support argmin or argmax over multiple axes? numpy does not support it.
+        //      Currently, it is sort of already supported. However, we need to correct the retruend result: a tensor of tuples --- multi-dimensional indices. 
         if (m_axes.size() > 1)
             LogicError("%ls: %s node cannot perform argmin or argmax operator over multiple axes.", Base::NodeDescription().c_str(), typeid(*this).name());
 
@@ -274,6 +260,8 @@ template <class ElemType>
     else if (ReduceSequenceAxis())
     {
         Base::Validate(isFinalValidationPass);
+        for (auto axis : m_axes)
+            std::cerr << "reducing sequence axis: " << axis << std::endl;
 
         // we generate its own MBLayout
         if (isFinalValidationPass && !Input(0)->HasMBLayout())
@@ -305,7 +293,7 @@ template <class ElemType>
 
         let shape = Input(0)->GetSampleLayout();
         auto dims = shape.GetDims();
-        size_t reducedDimProd = 1; 
+        size_t reducedDimProd = 1; // (init to keep compiler happy)
         if (ReduceAllStaticAxes())
         {
             reducedDimProd = shape.GetNumElements();
@@ -314,41 +302,38 @@ template <class ElemType>
         else if (!m_axes.empty() 
                 && std::all_of(m_axes.begin(), 
                                 m_axes.end(), 
-                                [&dims](int axis) { return axis - 1 >= 0 && axis - 1 < dims.size(); }))
+                                [&](int axis) { return axis - 1 >= 0 && axis - 1 < dims.size(); }))
         {
             //Accumulate the number of elements for reduce_mean
-            reducedDimProd = std::accumulate(m_axes.begin(),
-                                                m_axes.end(), 
-                                                1, 
-                                                [&dims](size_t acc, int& axis) { return acc * dims[axis - 1]; });
+            std::for_each(m_axes.begin(),
+                            m_axes.end(), 
+                            [&](int axis) {reducedDimProd *= dims[axis - 1]; }
+            );
 
             // axes reduced to a scalar
             if (m_keepDimensions)
                 std::for_each(m_axes.begin(),
                     m_axes.end(),
-                    [&dims](int axis) {dims[axis - 1] = 1; }
+                    [&](int axis) {dims[axis - 1] = 1; }
                  );
             else
             {
                 SmallVector<size_t> reducedDims(dims.size() - m_axes.size());
                 for (size_t i = 0, j = 0; i < dims.size(); ++i)
                 {
-                    if (Contains(m_axes, i + 1)) //note that axis = (i + 1) --- starting from 1 instead of 0
+                    if (ReductionAxesHave(i + 1)) //axis = (i + 1)
+                    {
                         continue;
+                    }
                     reducedDims[j] = dims[i];
                     j++;
                 }
                 dims = reducedDims;
             }
         }
-        else if (isFinalValidationPass) 
-        {
-            InvalidArgument("The shape of %ls [%ls] can not be reduced along axes [%ls]",
-                NodeDescription().c_str(),
-                wstring(shape).c_str(),
-                boost::algorithm::join(m_axes | boost::adaptors::transformed([](int axis) { return std::to_wstring(axis); }), ", ").c_str()
-            );
-        }
+        else if (isFinalValidationPass)
+            InvalidArgument("The shape of %ls [%s] has no axis %d", NodeDescription().c_str(), string(shape).c_str(), m_axes);
+
         // for "Mean", we must divide by #elements
         if (isFinalValidationPass && IsMean())
             m_scale = (ElemType)(1.0 / reducedDimProd);
