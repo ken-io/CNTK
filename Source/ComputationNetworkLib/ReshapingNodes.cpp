@@ -23,6 +23,8 @@
 #include <assert.h>
 #include <stack>
 #include <unordered_map>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/range/adaptor/transformed.hpp>
 
 namespace Microsoft { namespace MSR { namespace CNTK {
 
@@ -332,8 +334,13 @@ template <class ElemType>
             }
         }
         else if (isFinalValidationPass)
-            InvalidArgument("The shape of %ls [%s] has no axis %d", NodeDescription().c_str(), string(shape).c_str(), m_axes);
-
+        {
+            InvalidArgument("The shape of %ls [%ls] can not be reduced along axes [%ls]",
+                NodeDescription().c_str(),
+                wstring(shape).c_str(),
+                boost::algorithm::join(m_axes | boost::adaptors::transformed([](int axis) { return std::to_wstring(axis); }), ", ").c_str()
+            );
+        }
         // for "Mean", we must divide by #elements
         if (isFinalValidationPass && IsMean())
             m_scale = (ElemType)(1.0 / reducedDimProd);
